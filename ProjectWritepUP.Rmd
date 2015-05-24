@@ -1,0 +1,174 @@
+---
+title: "Project Write-Up"
+author: "Yogesh PARTE"
+date: "Friday, May 22, 2015"
+output:
+  html_document:
+    toc: yes
+---
+
+#Introduction
+
+* The goal of this project is to develop a model to predict *classe* variable for training and testing data provided in files *pml-training.csv* and *pml-testing.csv* respectively. 
+
+* All the steps and analysis carried out for data clean-up, model selection, model creation and prediction are explained in following paragraphs.
+
+```{r setup, include=FALSE,echo=FALSE}
+rm(list=ls(all=TRUE)); #clear all objects
+
+library(knitr)
+knitr::opts_chunk$set(cache=TRUE)
+```
+```{r eval=TRUE, echo=FALSE,cache=TRUE}
+
+## Load training data
+TrainingDataFile <-"./DataSet/pml-training.csv";
+
+pml.training <- read.csv(TrainingDataFile);
+
+## Load testing data
+TestingDataFile <-"./DataSet/pml-testing.csv";
+pml.testing <- read.csv(TestingDataFile);
+````
+#Analysis of the data
+
+1. There are `r dim(pml.training)[2]` recorded variables in each files. Training data file contains `r dim(pml.training)[1]` observations and corresponding to each of these observation the class is listed under variable *classe*. *classe* variable is absent in testing data.
+
+2. Many of the columns are either blank or contain `r NA` values. 
+
+## Cleaning of the data
+We remove following variables/ columns from trainig data:
+
+1. Columns with `r NA `values.
+
+2. Columns containing time stamps, user names
+
+3. Columns with derived quantities such as min, max, kurtosis values, etc.,...
+
+```{r eval=TRUE, echo=FALSE, cache=TRUE}
+
+## clean data: remove predictors with NA
+Clean_TrainingData <-pml.training[ , ! apply(pml.training , 2 , function(x) any(is.na(x)) ) ]
+
+## Remove time stamps, user names,
+Clean_TrainingData <-Clean_TrainingData[,-(1:7)];
+
+#Retain only required predictors and class variables from all the recorded variables
+indxOfPredictors<-setdiff(1:dim(Clean_TrainingData)[2],
+                        c(grep("kurtosis_*" , names(Clean_TrainingData)),
+                          grep("skewness_*" , names(Clean_TrainingData)), 
+                          grep("amplitude_*", names(Clean_TrainingData)),
+                          grep("max_*"      , names(Clean_TrainingData)),
+                          grep("min_*"      , names(Clean_TrainingData))))
+
+Clean_TrainingData <-Clean_TrainingData[,indxOfPredictors];
+
+```
+## Analysis of cleaned training data 
+
+* Cleaned training data contains `r dim(Clean_TrainingData)[2]-1` predictors.
+
+* Number of observations in each class are shown in pie chart below. As evident **class-A** is dominant where as other classes have more or less similar number of observations.
+
+```{r eval=TRUE, echo=FALSE,cache=TRUE, fig.width=6, fig.heigh=3}
+## List cases for each level of y: 
+yt<-as.data.frame(table(Clean_TrainingData$classe))
+
+## Pie Chart with Percentages
+lbls<- levels(Clean_TrainingData$classe)
+pct <- signif(yt$Freq/sum(yt$Freq)*100,4)
+lbls <- paste(lbls, pct) # add percents to labels 
+lbls <- paste(lbls,"%",sep="") # ad % to labels 
+pie(yt$Freq,labels = lbls, col=rainbow(length(lbls)),
+    main="Percentage of observations in each class \nfor 19622 observations in training data")
+```
+
+```{r eval=TRUE, echo=FALSE,cache=TRUE}
+## Predictor variables
+trainX <- Clean_TrainingData[, names(Clean_TrainingData) != "classe"]
+y<-Clean_TrainingData$classe
+```
+* There are `r dim(trainX)[2]` predictor variables.
+
+* There appears to be strong correlation amongst predictor variable 
+
+```{r eval=TRUE, echo=FALSE,cache=TRUE}
+library(corrgram)
+
+corrgram(trainX, order=NULL, lower.panel=panel.shade,
+  upper.panel=NULL, text.panel=panel.txt,main="Correlation amongs predictors in pml.training (cleaned, unsorted)");
+```
+
+# Modeling approach
+
+Considering strong correlation amongst predictor variables and large number of observations, it is decided to use *randomForest* algorithm/function to obtain predictive model. Some of the advantages cited are (see [Ref-2](http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#overview)):
+
+* It is unexcelled in accuracy among current algorithms.
+
+* It runs efficiently on large data bases.
+
+* It gives estimates of what variables are important in the classification.
+
+* It generates an internal unbiased estimate of the generalization error as the forest building progresses.
+
+* It has methods for balancing error in class population unbalanced data sets.
+
+#Modeling process
+
+```{r eval=TRUE}
+library('randomForest')
+set.seed(899)
+rfmodel<-randomForest(trainX,y,ntree=500,importance=TRUE)
+
+```
+
+#Model description and statistics
+```{r eval=TRUE, echo=FALSE, dependson=7}
+
+print(rfmodel)
+```
+
+#Comments
+
+1. Out-Of-Bag (OOB) error estimate is:  0.29%  
+
+2. OOB class error for class-A is minimal amongst all classes. It is expected as class-A is the dominant class. However, class error for other classes is well within acceptable limit of less than 5% 
+
+3. Cross validation is ensured in forest building process which avoids overfitting [Ref-1](http://www.stat.berkeley.edu/~breiman/RandomForests/)
+
+# Model prediction for the test data
+
+*We clean the testing data to retain predictors identical to the training data 
+
+```{r eval=TRUE, echo=FALSE}
+# retain only relevant columns as in the training dat
+columns2Retain<-intersect(colnames(Clean_TrainingData),colnames(pml.testing))
+
+CleanTestingData<-pml.testing[,columns2Retain]
+
+rf_model_pred =predict(rfmodel,CleanTestingData,type='class')
+
+print(rf_model_pred)
+````
+
+```{r eval=FALSE,echo=FALSE}
+
+## Write prediction on test data to text files for submission
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(rf_model_pred)
+```
+
+
+#References
+1. [Random Forest](http://www.stat.berkeley.edu/~breiman/RandomForests/)
+                   
+                   
+                   
+
+
